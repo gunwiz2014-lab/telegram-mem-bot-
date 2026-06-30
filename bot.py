@@ -51,7 +51,7 @@ async def cmd_getid(message: Message):
     или просто отправь стикер в личку боту."""
     if message.reply_to_message and message.reply_to_message.sticker:
         sticker = message.reply_to_message.sticker
-        await message.reply(f"file_id:\n`{sticker.file_id}`", parse_mode="Markdown")
+        await message.reply(f"file_id:\n{sticker.file_id}")
     else:
         await message.reply(
             "Перешли мне стикер и ответь на него командой /getid, "
@@ -63,7 +63,7 @@ async def cmd_getid(message: Message):
 async def on_sticker_dm(message: Message):
     """Если в личку прислали стикер - сразу вернуть его file_id."""
     if message.chat.type == ChatType.PRIVATE:
-        await message.reply(f"file_id:\n`{message.sticker.file_id}`", parse_mode="Markdown")
+        await message.reply(f"file_id:\n{message.sticker.file_id}")
 
 
 @dp.message()

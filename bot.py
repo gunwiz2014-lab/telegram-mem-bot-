@@ -3,21 +3,53 @@ import json
 import logging
 import os
 import random
+import time
+from collections import defaultdict, deque
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("meme-sticker-bot")
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 
-# Шанс что бот ответит стикером на обычное сообщение в группе (0.0 - 1.0)
-REPLY_CHANCE = float(os.environ.get("REPLY_CHANCE", "0.1"))
+# Базовый шанс ответить стикером в спокойном чате (0.0 - 1.0)
+BASE_REPLY_CHANCE = float(os.environ.get("BASE_REPLY_CHANCE", "0.1"))
+
+# Максимальный шанс, когда чат "кипит" активностью (0.0 - 1.0)
+MAX_REPLY_CHANCE = float(os.environ.get("MAX_REPLY_CHANCE", "0.4"))
+
+# Сколько сообщений за ACTIVITY_WINDOW секунд считается "максимальной" активностью
+ACTIVITY_THRESHOLD = int(os.environ.get("ACTIVITY_THRESHOLD", "8"))
+
+# Окно времени (в секундах), за которое считаем активность чата
+ACTIVITY_WINDOW = int(os.environ.get("ACTIVITY_WINDOW", "60"))
 
 STICKERS_FILE = os.path.join(os.path.dirname(__file__), "stickers.json")
+
+# История таймстемпов сообщений по каждому чату (для расчёта активности)
+chat_activity: dict[int, deque] = defaultdict(deque)
+
+
+def get_activity_level(chat_id: int) -> float:
+    """Возвращает уровень активности чата от 0.0 (тихо) до 1.0 (максимум)."""
+    now = time.time()
+    history = chat_activity[chat_id]
+    history.append(now)
+
+    while history and now - history[0] > ACTIVITY_WINDOW:
+        history.popleft()
+
+    return min(len(history) / ACTIVITY_THRESHOLD, 1.0)
+
+
+def get_reply_chance(chat_id: int) -> float:
+    """Линейно интерполирует шанс ответа между BASE и MAX в зависимости от активности."""
+    level = get_activity_level(chat_id)
+    return BASE_REPLY_CHANCE + (MAX_REPLY_CHANCE - BASE_REPLY_CHANCE) * level
 
 
 def load_stickers() -> list[str]:
@@ -31,6 +63,16 @@ def load_stickers() -> list[str]:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
+MORE_BUTTON_CALLBACK = "more_sticker"
+
+
+def more_sticker_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Ещё стикер", callback_data=MORE_BUTTON_CALLBACK)]
+        ]
+    )
+
 
 @dp.message(Command("sticker"))
 async def cmd_sticker(message: Message):
@@ -42,7 +84,18 @@ async def cmd_sticker(message: Message):
             "(используй команду /getid, переслав боту стикер)."
         )
         return
-    await message.answer_sticker(random.choice(stickers))
+    await message.answer_sticker(random.choice(stickers), reply_markup=more_sticker_keyboard())
+
+
+@dp.callback_query(F.data == MORE_BUTTON_CALLBACK)
+async def on_more_sticker(callback: CallbackQuery):
+    """Кнопка под стикером - прислать ещё один."""
+    stickers = load_stickers()
+    if not stickers:
+        await callback.answer("Список стикеров пуст", show_alert=True)
+        return
+    await callback.message.answer_sticker(random.choice(stickers), reply_markup=more_sticker_keyboard())
+    await callback.answer()
 
 
 @dp.message(Command("getid"))
@@ -78,8 +131,9 @@ async def on_any_message(message: Message):
     if not stickers:
         return
 
-    if random.random() < REPLY_CHANCE:
-        await message.answer_sticker(random.choice(stickers))
+    chance = get_reply_chance(message.chat.id)
+    if random.random() < chance:
+        await message.answer_sticker(random.choice(stickers), reply_markup=more_sticker_keyboard())
 
 
 async def main():

@@ -771,16 +771,26 @@ async def on_sticker_dm(message: Message):
         total = len(load_stickers())
         if added:
             await message.reply(
-                f"✅ Стикер сохранён!\n"
-                f"Всего стикеров в боте: <b>{total}</b>",
+                f"✅ Стикер сохранён! Всего: <b>{total}</b>",
                 parse_mode="HTML",
             )
         else:
             await message.reply(
-                f"⚠️ Этот стикер уже есть в списке.\n"
-                f"Всего стикеров: <b>{total}</b>",
+                f"⚠️ Уже есть. Всего: <b>{total}</b>",
                 parse_mode="HTML",
             )
+        # Отправить обратно тот же стикер
+        await message.answer_sticker(fid)
+
+@dp.message(lambda m: m.sticker is not None and m.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP))
+async def on_sticker_group(message: Message):
+    """Кто-то прислал стикер в группу — бот отвечает стикером."""
+    stickers = load_stickers()
+    if not stickers:
+        return
+    if not gcfg(message.chat.id, "enabled", True):
+        return
+    await message.answer_sticker(random.choice(stickers))
 
 @dp.message()
 async def on_any_message(message: Message):
@@ -791,9 +801,8 @@ async def on_any_message(message: Message):
     stickers = load_stickers()
     if not stickers: return
     if (time.time()-chat_last_sticker.get(chat_id,0)) < STICKER_COOLDOWN: return
-    if random.random() < get_reply_chance(chat_id):
-        chat_last_sticker[chat_id] = time.time()
-        await message.answer_sticker(random.choice(stickers), reply_markup=more_kb())
+    chat_last_sticker[chat_id] = time.time()
+    await message.answer_sticker(random.choice(stickers), reply_markup=more_kb())
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ENTRY POINT

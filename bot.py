@@ -10,7 +10,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import (
-    BotCommand, CallbackQuery,
+    BotCommand, BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats, CallbackQuery,
     InlineKeyboardButton, InlineKeyboardMarkup, Message,
 )
 
@@ -749,10 +750,37 @@ async def cmd_getid(message: Message):
     else:
         await message.reply("Ответь командой /getid на стикер.")
 
+def save_sticker(file_id: str) -> bool:
+    """Добавляет стикер в stickers.json. Возвращает True если добавлен, False если уже есть."""
+    data = {"file_ids": []}
+    if os.path.exists(STICKERS_FILE):
+        with open(STICKERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    if file_id in data["file_ids"]:
+        return False
+    data["file_ids"].append(file_id)
+    with open(STICKERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
+
 @dp.message(lambda m: m.sticker is not None)
 async def on_sticker_dm(message: Message):
     if message.chat.type == ChatType.PRIVATE:
-        await message.reply(f"<code>{message.sticker.file_id}</code>", parse_mode="HTML")
+        fid   = message.sticker.file_id
+        added = save_sticker(fid)
+        total = len(load_stickers())
+        if added:
+            await message.reply(
+                f"✅ Стикер сохранён!\n"
+                f"Всего стикеров в боте: <b>{total}</b>",
+                parse_mode="HTML",
+            )
+        else:
+            await message.reply(
+                f"⚠️ Этот стикер уже есть в списке.\n"
+                f"Всего стикеров: <b>{total}</b>",
+                parse_mode="HTML",
+            )
 
 @dp.message()
 async def on_any_message(message: Message):
@@ -772,23 +800,26 @@ async def on_any_message(message: Message):
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def main():
-    # Команды в меню / кнопке (слэш)
-    await bot.set_my_commands([
-        BotCommand(command="start",     description="🎰 Главное меню"),
-        BotCommand(command="me",        description="👤 Мой профиль и статистика"),
-        BotCommand(command="balance",   description="💰 Мой баланс монет"),
-        BotCommand(command="daily",     description="🎁 Ежедневный бонус (+200🪙)"),
-        BotCommand(command="top",       description="🏆 Топ игроков"),
-        BotCommand(command="slots",     description="🎰 Слот-машина (пример: /slots 100)"),
-        BotCommand(command="bj",        description="🃏 Блэкджек (пример: /bj 100)"),
-        BotCommand(command="roulette",  description="🎡 Рулетка (пример: /roulette 50)"),
-        BotCommand(command="coin",      description="🪙 Орёл или решка (пример: /coin 50)"),
-        BotCommand(command="fish",      description="🎣 Порыбачить (бесплатно)"),
-        BotCommand(command="duel",      description="⚔️ Дуэль в группе (пример: /duel 100)"),
-        BotCommand(command="sticker",   description="🖼 Случайный стикер"),
-        BotCommand(command="settings",  description="⚙️ Настройки бота (только админ)"),
-        BotCommand(command="getid",     description="🔍 Получить file_id стикера"),
-    ])
+    commands = [
+        BotCommand(command="start",    description="🎰 Главное меню"),
+        BotCommand(command="me",       description="👤 Мой профиль и статистика"),
+        BotCommand(command="balance",  description="💰 Мой баланс монет"),
+        BotCommand(command="daily",    description="🎁 Ежедневный бонус (+200🪙)"),
+        BotCommand(command="top",      description="🏆 Топ игроков"),
+        BotCommand(command="slots",    description="🎰 Слот-машина  /slots 100"),
+        BotCommand(command="bj",       description="🃏 Блэкджек  /bj 100"),
+        BotCommand(command="roulette", description="🎡 Рулетка  /roulette 50"),
+        BotCommand(command="coin",     description="🪙 Орёл или решка  /coin 50"),
+        BotCommand(command="fish",     description="🎣 Рыбалка (бесплатно)"),
+        BotCommand(command="duel",     description="⚔️ Дуэль  /duel 100"),
+        BotCommand(command="sticker",  description="🖼 Случайный стикер"),
+        BotCommand(command="settings", description="⚙️ Настройки (только админ)"),
+        BotCommand(command="getid",    description="🔍 file_id стикера"),
+    ]
+    # Команды видны в личке
+    await bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+    # Команды видны в группах (кнопка / в чате)
+    await bot.set_my_commands(commands, scope=BotCommandScopeAllGroupChats())
     log.info("Бот запущен. Стикеров: %d", len(load_stickers()))
     await dp.start_polling(bot)
 
